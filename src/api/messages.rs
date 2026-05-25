@@ -533,6 +533,16 @@ pub struct AnthropicMessagesRequest {
     #[builder(setter(strip_option), default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     output_config: Option<AnthropicOutputConfig>,
+
+    /// Comma-separated `anthropic-beta` flags forwarded to upstream as the
+    /// `anthropic-beta` HTTP header. Not serialized into the request body —
+    /// Anthropic reads it from the header.
+    ///
+    /// Set after construction (e.g. after `serde_json::from_value` on a
+    /// proxied client body) via [`set_anthropic_beta`](Self::set_anthropic_beta).
+    #[builder(setter(into, strip_option), default)]
+    #[serde(skip)]
+    anthropic_beta: Option<String>,
 }
 
 impl AnthropicMessagesRequestBuilder {
@@ -595,6 +605,14 @@ impl AnthropicMessagesRequest {
 
     pub fn experimental_metadata(&self) -> Option<OpenRouterExperimentalMetadata> {
         self.experimental_metadata
+    }
+
+    pub fn set_anthropic_beta(&mut self, value: impl Into<String>) {
+        self.anthropic_beta = Some(value.into());
+    }
+
+    pub fn anthropic_beta(&self) -> Option<&str> {
+        self.anthropic_beta.as_deref()
     }
 }
 
@@ -732,7 +750,7 @@ pub(crate) async fn create_message_with_client(
     let url = format!("{base_url}/messages");
     let request = request.stream(false);
 
-    let response = transport_request::with_experimental_metadata_header(
+    let mut req = transport_request::with_experimental_metadata_header(
         transport_request::with_client_request_headers(
             transport_request::post(http_client, &url),
             api_key,
@@ -741,10 +759,14 @@ pub(crate) async fn create_message_with_client(
             app_categories,
         )?,
         &request.experimental_metadata,
-    )
-    .json(&request)
-    .send()
-    .await?;
+    );
+
+    // forward the beta header if set
+    if let Some(beta) = request.anthropic_beta() {
+        req = req.header("anthropic-beta", beta);
+    }
+
+    let response = req.json(&request).send().await?;
 
     if response.status().is_success() {
         let response_data: AnthropicMessagesResponse =
