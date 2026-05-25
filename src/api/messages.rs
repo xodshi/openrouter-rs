@@ -423,6 +423,7 @@ pub enum AnthropicOutputEffort {
     Medium,
     High,
     Max,
+    XHigh,
 }
 
 /// Output config for Anthropic messages.
