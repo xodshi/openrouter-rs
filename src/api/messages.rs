@@ -814,7 +814,7 @@ pub(crate) async fn stream_messages_with_client(
     let url = format!("{base_url}/messages");
     let request = request.stream(true);
 
-    let response = transport_request::with_experimental_metadata_header(
+    let mut req = transport_request::with_experimental_metadata_header(
         transport_request::with_client_request_headers(
             transport_request::post(http_client, &url),
             api_key,
@@ -823,10 +823,13 @@ pub(crate) async fn stream_messages_with_client(
             app_categories,
         )?,
         &request.experimental_metadata,
-    )
-    .json(&request)
-    .send()
-    .await?;
+    );
+
+    if let Some(beta) = request.anthropic_beta() {
+        req = req.header("anthropic-beta", beta);
+    }
+
+    let response = req.json(&request).send().await?;
 
     if response.status().is_success() {
         let stream = parse_sse_frames(response_lines(response))
